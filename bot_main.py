@@ -7,12 +7,12 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram import F, Router
 from aiogram.types import BufferedInputFile
 from aiogram.fsm.context import FSMContext
-from states import EnterStates, ReportStates
+from states import EnterStates, ReportStates, EditModeStates
 
 from db_manager import *
 from excel_writer import write_excel_to_buffer
-from custom_callbacks import ProjectCallback, PageCallback
-from keyboard_helper import projects_kb
+from custom_callbacks import ProjectCallback, PageCallback, SumCallback
+from keyboard_helper import projects_kb, sums_selector_kb
 
 
 dp = Dispatcher()
@@ -28,6 +28,7 @@ async def start(message: types.Message):
     keyboard = ReplyKeyboardBuilder()
     keyboard.button(text='Ввести сумму по проекту')
     keyboard.button(text='Выгрузить отчёт по проекту')
+    keyboard.button(text='Изменить данные по проекту')
     keyboard.adjust(1)
 
     await message.answer('Hello!', reply_markup=keyboard.as_markup())
@@ -120,8 +121,9 @@ async def report_project_menu(message: types.Message, state: FSMContext):
     await state.set_state(ReportStates.choosing_project)
 
 
+@router.callback_query(PageCallback.filter(F.action == 'page'), EditModeStates.choosing_project)
 @router.callback_query(PageCallback.filter(F.action == 'page'), ReportStates.choosing_project)
-async def report_change_page(query: types.CallbackQuery, callback_data: PageCallback, state: FSMContext):
+async def change_projects_page(query: types.CallbackQuery, callback_data: PageCallback, state: FSMContext):
     page = (await state.get_data())['page']
     if callback_data.direction == 'next':
         page += 1
@@ -162,6 +164,83 @@ async def generate_report(query: types.CallbackQuery, callback_data: ProjectCall
 
     await query.answer()
     await state.clear()
+
+
+'''
+Changing project data section
+'''
+
+@router.message(F.text.lower() == 'изменить данные по проекту')
+async def change_project_menu(message: types.Message, state: FSMContext):
+    total = await get_projects_count()
+    page = 0
+    pages = math.ceil(total / 8)
+    await state.update_data(page=page)
+
+    kb = await projects_kb(page, pages)
+
+    await message.answer('Выберите проект', reply_markup=kb.as_markup())
+    await state.set_state(EditModeStates.choosing_project)
+
+@router.callback_query(ProjectCallback.filter(F.action == 'choose'), EditModeStates.choosing_project)
+async def project_chosen_edit(query: types.CallbackQuery, callback_data: ProjectCallback, state: FSMContext):
+    project_id = callback_data.project_id
+    sums_count = await get_sums_count_by_project(project_id)
+
+    if sums_count == 0:
+        await query.message.answer('Нет данных для изменения')
+        await query.answer()
+        return
+
+    page = 0
+    pages = math.ceil(sums_count / 10)
+    await state.update_data(project_id=project_id, sums_count=sums_count, sum_page=page, sum_pages=pages)
+    kb = await sums_selector_kb(project_id, page, pages)
+
+    await query.message.answer('Выберите запись для изменения в правой колонке', reply_markup=kb.as_markup())
+    await state.set_state(EditModeStates.choosing_sum)
+    await query.answer()
+
+
+@router.callback_query(PageCallback.filter(F.action == 'page'), EditModeStates.choosing_sum)
+async def change_page_edit(query: types.CallbackQuery, callback_data: PageCallback, state: FSMContext):
+    data = await state.get_data()
+    page = data['sum_page']
+    pages = data['sum_pages']
+    project = data['project_id']
+    if callback_data.direction == 'next':
+        page += 1
+    else:
+        page -= 1
+
+    await state.update_data(sum_page=page)
+    kb = await sums_selector_kb(project, page, pages)
+
+    await query.message.edit_reply_markup(reply_markup=kb.as_markup())
+    await query.answer()
+
+
+@router.callback_query(SumCallback.filter(F.action == 'sum_select'), EditModeStates.choosing_sum)
+async def sum_chosen_edit(query: types.CallbackQuery, callback_data: SumCallback, state: FSMContext):
+    sum_id = callback_data.sum_db_id
+    sum = callback_data.sum_value
+    await state.update_data(sum_id=sum_id)
+
+    await state.set_state(EditModeStates.editing_sum)
+    await query.message.answer(f'Введите новую сумму вместо {sum}')
+    await query.answer()
+
+
+@router.message(EditModeStates.editing_sum)
+async def sum_entered_edit(message: types.Message, state: FSMContext):
+    try:
+        sum = float(message.text.replace(',', '.'))
+        await update_sum((await state.get_data())['sum_id'], sum)
+        await message.answer('Сумма изменена успешно!')
+        await state.clear()
+    except ValueError:
+        await message.answer('Сумма должна быть числом! Повторите ввод')
+        return
 
 
 async def main():

@@ -10,3 +10,9 @@ class ProjectCallback(CallbackData, prefix='pr'):
 class PageCallback(CallbackData, prefix='pg'):
     direction: str
     action: str
+
+
+class SumCallback(CallbackData, prefix='sm'):
+    sum_db_id: int
+    sum_value: float
+    action: str

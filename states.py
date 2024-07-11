@@ -11,3 +11,9 @@ class ReportStates(StatesGroup):
     choosing_project = State()
     creating_report = State()
 
+
+class EditModeStates(StatesGroup):
+    choosing_project = State()
+    choosing_sum = State()
+    editing_sum = State()
+

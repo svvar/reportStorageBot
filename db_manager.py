@@ -113,6 +113,34 @@ async def get_sums_by_date(project_id, start_date=None):
         return result.all()
 
 
+async def get_sums_count_by_project(project_id):
+    async with AsyncSession(engine) as session:
+        result = await session.execute(sa.select(sa.func.count(SumData.id)).filter(SumData.project_id == project_id))
+        return result.scalar()
+
+
+async def get_sums_with_dates(project_id, limit=None, offset=None):
+    async with AsyncSession(engine) as session:
+        query = sa.select(SumData.id, SumData.datetime, SumData.sum).filter(SumData.project_id == project_id)
+        if limit and offset:
+            result = await session.execute(query.limit(limit).offset(offset))
+        elif limit:
+            result = await session.execute(query.limit(limit))
+        elif offset:
+            result = await session.execute(query.offset(offset))
+        else:
+            result = await session.execute(query)
+        return result.all()
+
+
+async def update_sum(sum_id, new_sum):
+    async with AsyncSession(engine) as session:
+        async with session.begin():
+            sum = await session.get(SumData, sum_id)
+            sum.sum = new_sum
+        await session.commit()
+
+
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -120,6 +148,7 @@ async def create_tables():
 
 async def main():
     await create_tables()
+    # print(await get_sums_with_dates(1))
 
 if __name__ == '__main__':
     asyncio.run(main())
