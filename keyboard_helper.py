@@ -32,8 +32,8 @@ async def projects_kb(page, total_pages, add_new=False):
     return kb
 
 
-async def sums_selector_kb(project_id, page, total_pages):
-    sums = await get_sums_with_dates(project_id, limit=10, offset=page*10)
+async def sums_selector_kb(project_id, after_datetime, page, total_pages):
+    sums = await get_sums_with_dates(project_id, after_datetime, limit=10, offset=page*10)
 
     kb = InlineKeyboardBuilder()
 

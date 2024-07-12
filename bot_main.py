@@ -185,19 +185,28 @@ async def change_project_menu(message: types.Message, state: FSMContext):
 @router.callback_query(ProjectCallback.filter(F.action == 'choose'), EditModeStates.choosing_project)
 async def project_chosen_edit(query: types.CallbackQuery, callback_data: ProjectCallback, state: FSMContext):
     project_id = callback_data.project_id
-    sums_count = await get_sums_count_by_project(project_id)
+    last_report_date = await get_last_report_date(project_id)
+    no_report_yet = False
+    if last_report_date is None:
+        last_report_date = datetime.datetime(2020, 1, 1, 0, 0, 0)
+        no_report_yet = True
+    sums_count = await get_sums_count_by_project(project_id, last_report_date)
+
+    last_date_string = 'с ' + last_report_date.strftime("%d.%m.%y %H:%M") if not no_report_yet else ""
 
     if sums_count == 0:
-        await query.message.answer('Нет данных для изменения')
+        await query.message.answer(f'Нет данных для изменения {last_date_string}')
         await query.answer()
         return
 
     page = 0
     pages = math.ceil(sums_count / 10)
-    await state.update_data(project_id=project_id, sums_count=sums_count, sum_page=page, sum_pages=pages)
-    kb = await sums_selector_kb(project_id, page, pages)
+    await state.update_data(project_id=project_id, sums_count=sums_count, sum_page=page, sum_pages=pages, last_rep_date=last_report_date)
+    kb = await sums_selector_kb(project_id, last_report_date, page, pages)
 
-    await query.message.answer('Выберите запись для изменения в правой колонке', reply_markup=kb.as_markup())
+    await query.message.answer(
+        f'Выберите запись для изменения {last_date_string} в правой колонке',
+        reply_markup=kb.as_markup())
     await state.set_state(EditModeStates.choosing_sum)
     await query.answer()
 
@@ -208,13 +217,14 @@ async def change_page_edit(query: types.CallbackQuery, callback_data: PageCallba
     page = data['sum_page']
     pages = data['sum_pages']
     project = data['project_id']
+    last_report_date = data['last_rep_date']
     if callback_data.direction == 'next':
         page += 1
     else:
         page -= 1
 
     await state.update_data(sum_page=page)
-    kb = await sums_selector_kb(project, page, pages)
+    kb = await sums_selector_kb(project, last_report_date, page, pages)
 
     await query.message.edit_reply_markup(reply_markup=kb.as_markup())
     await query.answer()

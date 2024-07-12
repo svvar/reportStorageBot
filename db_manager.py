@@ -113,15 +113,19 @@ async def get_sums_by_date(project_id, start_date=None):
         return result.all()
 
 
-async def get_sums_count_by_project(project_id):
+async def get_sums_count_by_project(project_id, after_datetime=None):
     async with AsyncSession(engine) as session:
-        result = await session.execute(sa.select(sa.func.count(SumData.id)).filter(SumData.project_id == project_id))
+        if after_datetime:
+            result = await session.execute(
+                sa.select(sa.func.count(SumData.id)).filter(SumData.project_id == project_id, SumData.datetime >= after_datetime))
+        else:
+            result = await session.execute(sa.select(sa.func.count(SumData.id)).filter(SumData.project_id == project_id))
         return result.scalar()
 
 
-async def get_sums_with_dates(project_id, limit=None, offset=None):
+async def get_sums_with_dates(project_id, after_datetime, limit=None, offset=None):
     async with AsyncSession(engine) as session:
-        query = sa.select(SumData.id, SumData.datetime, SumData.sum).filter(SumData.project_id == project_id)
+        query = sa.select(SumData.id, SumData.datetime, SumData.sum).filter(SumData.project_id == project_id, SumData.datetime >= after_datetime)
         if limit and offset:
             result = await session.execute(query.limit(limit).offset(offset))
         elif limit:
